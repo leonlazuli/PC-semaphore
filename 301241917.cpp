@@ -48,9 +48,19 @@ int g_material_3_count = 0;
 int g_inputBufferDeadlockCounter;
 int g_outputQueueDeadlockCounter;
 
+/* the semaphores */
+sem_t full, empty;
+sem_t tools;
+
 /* The mutex lock */
 pthread_mutex_t inputBuffer_mutex;
 pthread_mutex_t outputQueue_mutex;
+
+
+pthread_t tid;       //Thread ID
+pthread_attr_t attr; //Set of thread attributes
+
+
 
 void show_material_total()
 {
@@ -183,6 +193,85 @@ public:
 		}
 	}
 	
+	bool try_get_materials(Product pd, Material* tempHold)
+	{
+		if(pd == PRODUCT_1)
+		{
+			int index1 = -1;
+			int index2 = -1;
+			for(int i = 0; i != size; i++)
+			{
+				if(ary[i] == MATERIAL_1)
+					index1 = i;
+				else if (ary[i] == MATERIAL_2)
+					index2 = i;
+				if((index1 != -1)&&(index2 != -1))
+					break;
+			}
+			if(index1 == -1 || index2 == -1)
+				return false;
+			else
+			{
+				ary[index1] = -1;
+				ary[index2] = -1;
+				return true;
+			}
+		}
+		
+		else if(pd == PRODUCT_2)
+		{
+			int index1 = -1;
+			int index2 = -1;
+			for(int i = 0; i != size; i++)
+			{
+				if(ary[i] == MATERIAL_1)
+					index1 = i;
+				else if (ary[i] == MATERIAL_3)
+					index2 = i;
+				if((index1 != -1)&&(index2 != -1))
+					break;
+			}
+			if(index1 == -1 || index2 == -1)
+				return false;
+			else
+			{
+				ary[index1] = -1;
+				ary[index2] = -1;
+				return true;
+			}
+		}
+		
+		else if(pd == PRODUCT_3)
+		{
+			int index1 = -1;
+			int index2 = -1;
+			for(int i = 0; i != size; i++)
+			{
+				if(ary[i] == MATERIAL_3)
+					index1 = i;
+				else if (ary[i] == MATERIAL_2)
+					index2 = i;
+				
+				if((index1 != -1)&&(index2 != -1))
+					break;
+			}
+			if(index1 == -1 || index2 == -1)
+				return false;
+			else
+			{
+				ary[index1] = -1;
+				ary[index2] = -1;
+				return true;
+			}
+		}
+		
+		else
+		{
+			printf("************* There is undefined product in try_get_material\n\n");
+			return false;
+		}
+	}
+	
 	Material pop()  // won't use in the future
 	{
 		Material item = -1; 
@@ -222,13 +311,13 @@ public:
 	}
 	void showAry()
 	{
-		pthread_mutex_lock(&inputBuffer_mutex);
+		//pthread_mutex_lock(&inputBuffer_mutex);
 		printf("the current Array is: \n");
 		for(int i = 0; i != size; i++)
 		{
 			printf("%d\n",ary[i]);
 		}
-		pthread_mutex_unlock(&inputBuffer_mutex);
+		//pthread_mutex_unlock(&inputBuffer_mutex);
 	}
 		
 };
@@ -366,34 +455,33 @@ public:
 	
 	void showStatus() // remember not to use mutex again around this fuction.
 	{
-		pthread_mutex_lock(&outputQueue_mutex);
+		
 		printf("There are totally %d product in outputQueue now.\n",current);
 		printf("product_1: %d \n",p1_counter);
 		printf("product_2: %d \n",p2_counter);
 		printf("product_3: %d \n",p3_counter);
-		pthread_mutex_unlock(&outputQueue_mutex);
+		printf("show input status over\n");
+	
 	}
 	
 };
 
 
-
-/* the semaphores */
-sem_t full, empty;
-
 /* the inputbuffer */
 InputBuffer inputBuffer(BUFFER_SIZE);
 
+// the outputQueue
+OutputQueue outputQueue;
 
-pthread_t tid;       //Thread ID
-pthread_attr_t attr; //Set of thread attributes
+
 
 void *generator(void *param); /* the generator thread */
 void *operators(void *param); /* the operators thread */
 int insert_item(Material item);
 int remove_item(Material *item);
 
-void initializeData() {
+void initializeData(int nTools) 
+{
 
 	/* Create the inputBuffer_mutex lock */
 	pthread_mutex_init(&inputBuffer_mutex, NULL);
@@ -404,6 +492,9 @@ void initializeData() {
 
 	/* Create the empty semaphore and initialize to BUFFER_SIZE */
 	sem_init(&empty, 0, BUFFER_SIZE);
+	
+	sem_init(&tools,0, nTools/2); // in my strategy, the operator will whether fetch two tools or not fetch any tools, so, the last odd one is useless, by dividing the number of tools by 2, each down and up on semaphore means get or put back two tools
+	printf("there are %d tools \n\n\n\n",nTools/2);
 
 	/* Get the default attributes */
 	pthread_attr_init(&attr);
@@ -438,13 +529,14 @@ void *generator(void *param)
 		else {
 			printf("generator%d produced MATERIAL_%d\n", generatorID, materialID);
 		}
+		inputBuffer.showAry();
 		/* release the inputBuffer_mutex lock */
 		pthread_mutex_unlock(&inputBuffer_mutex);
 		printf("generator%d exits the critical section, and try to up the semaphore\n",generatorID);
 		/* signal full */
 		sem_post(&full);
 		printf("generator%d finish up the semaphore\n",generatorID);
-		inputBuffer.showAry();
+		
 	}
 	return NULL;
 }
@@ -453,34 +545,59 @@ void *generator(void *param)
 void *operators(void *param) { 
 	int operatorsID = *(int*)param;
 	while(TRUE) {
+		Material temp_materials[2] = {-1,-1}; // -1 means no material holded 
 		printf("$$$$$$$ pid is %d $$$$$$$$$$\n", getpid()); /////////////
 		/* sleep for a random period of time */
 		printf("now in operators%d, sleep for a while\n",operatorsID);
 		int rNum = (rand() / RAND_DIVISOR)%100;
 		sleep(rNum);
 		printf("operator%d finish sleep\n",operatorsID);
+		printf("operator%d try to fetch the tools\n", operatorsID);
+		sem_wait(&tools); // aquire two tools
+		//printf("There are %d tools in process \n\n\n",(int)tools);
+		printf("operator%d fetched the tools\n", operatorsID);
 		/* aquire the full lock */
-		printf("operators%d try to down the semaphore\n", operatorsID);
-		sem_wait(&full);
-		printf("operators%d finish downing the semaphore\n",operatorsID);
+		printf("operators%d try to down get the first material semaphore\n", operatorsID);
+		sem_wait(&full); 
+		printf("operators%d try to down get the second material semaphore \n", operatorsID);
+		sem_wait(&full); 
+		printf("operators%d finish getting all the materials semaphores \n",operatorsID);
 		/* aquire the inputBuffer_mutex lock */
 		pthread_mutex_lock(&inputBuffer_mutex);
 		printf("operators%d enter the critical section\n",operatorsID);
-		Material item = inputBuffer.pop();
-		if(item == -1) {
-			printf("*************** error:Consumer%d report error condition\n", operatorsID);
+		Product priority[2]; //ask the outputQueue which product to operate first
+		outputQueue.check_priority_next(priority);
+		if(inputBuffer.try_get_materials(priority[0],temp_materials)) //$$$$$$$$$$$$ maybe don't need temp_materials
+		{
+			pthread_mutex_lock(&outputQueue_mutex);
+			outputQueue.try_insert_product(priority[0]);
+			pthread_mutex_unlock(&outputQueue_mutex);
+			sem_post(&empty);
+			sem_post(&empty);
+			//sem_post(&tools);
 		}
-		else {
-			printf("operators%d consumed MATERIAL_%d\n", operatorsID,item);
+		else if(inputBuffer.try_get_materials(priority[1],temp_materials))
+		{
+			pthread_mutex_lock(&outputQueue_mutex);
+			outputQueue.try_insert_product(priority[1]);
+			pthread_mutex_unlock(&outputQueue_mutex);
+			sem_post(&empty);
+			sem_post(&empty);
+			//sem_post(&tools);
 		}
-		/* release the inputBuffer_mutex lock */
+		else
+		{
+			sem_post(&full);
+			sem_post(&full);
+			//sem_post(&tools)
+		}
+		inputBuffer.showAry();
 		pthread_mutex_unlock(&inputBuffer_mutex);
 		printf("operators%d exit the critical section\n",operatorsID);
 		/* signal empty */
-		printf("operators%d try to up the semaphore\n",operatorsID);
-		sem_post(&empty);
-		printf("operators%d finish upping the semaphore\n",operatorsID);
-		inputBuffer.showAry();
+		printf("operator%d put back the tools\n",operatorsID);
+		sem_post(&tools); //release the two tools
+		
 	}
 	return NULL;
 }
@@ -509,11 +626,12 @@ int main(int argc, char *argv[])
 	
 
 	int mainSleepTime = atoi(argv[1]); /* Time in seconds for main to sleep */
-	int numGeneator = atoi(argv[2]); /* Number of generator threads */
+	//int numGeneator = 3; /* Number of generator threads const 3*/  
+	int numTools = atoi(argv[2]); // number of tools
 	int numOperator = atoi(argv[3]); /* Number of operators threads */
-	int args[3] = {mainSleepTime, numGeneator, numOperator};
+	int args[3] = {mainSleepTime, numTools, numOperator};
 	/* Initialize the app */
-	initializeData();
+	initializeData(numTools);
 	
 	//while(TRUE)
 	//{
@@ -529,7 +647,7 @@ int main(int argc, char *argv[])
 			//changemode(1);
 			do
 			{
-				printf("############## pid is %d $$$$$$$$$$\n \n \n", getpid());
+				printf("############## pid is %d $$$$$$$$$$\n \n \n \n\n\n\n\n\n\n\n\n\n\n\n\n", getpid());
 				// int ch;
 				// 
 				// while(TRUE) // ****** just for test need a sleep or counter in fact
@@ -577,7 +695,8 @@ int main(int argc, char *argv[])
 void execute_child_process(int* args)
 {
 	int mainSleepTime = args[0];/* Time in seconds for main to sleep */
-	int numGeneator = args[1];/* Number of generator threads */
+	int numGeneator = 3; /* Number of generator threads  is a const 3 */
+	//int numTools = args[1]; // Number of tools
 	int numOperator = args[2]; /* Number of operators threads */
 	printf("----------------- now in main, before create the generator\n");
 	printf("$$$$$$$ pid is %d $$$$$$$$$$\n", getpid());///////////////
