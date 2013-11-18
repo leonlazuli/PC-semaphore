@@ -96,9 +96,35 @@ public:
 		
 	~InputBuffer(){delete ary;}
 	
+	void check_clear()
+	{
+		if(current < size)
+			return;
+		else
+		{
+			int detect[3] = {0,0,0}; // to detect whether there is material_1 or 2 or 3 in the ary
+			for(int i = 0; i != size; i++)
+			{
+				if(ary[i] == MATERIAL_1)
+					detect[0] = 1;
+				else if (ary[i] == MATERIAL_2)
+					detect[1] = 1;
+				else if (ary[i] == MATERIAL_3)
+					detect[3] = 1;
+			}
+			// if the ary is full and there is only 2 or 1 kind of material, deadlock may occur,  so discard all the material 
+			if((detect[0] + detect[1] + detect[2]) < 3) 
+			{
+				for(int i = 0; i != size; i++)
+					ary[i] = -1;
+				g_inputBufferDeadlockCounter++;
+			}
+		}
+	}
+	
 	int push(Material item)
 	{
-		
+		check_clear();
 		if(current < size)
 		{
 			if(item == MATERIAL_1)
@@ -334,7 +360,7 @@ public:
 		printf("the current Array is: \n");
 		for(int i = 0; i != size; i++)
 		{
-			printf("%d\n",ary[i]);
+			printf("B: %d\n",ary[i]);
 		}
 		//pthread_mutex_unlock(&inputBuffer_mutex);
 	}
@@ -489,6 +515,16 @@ public:
 		printf("product_3: %d \n",p3_counter);
 		printf("show input status over\n");
 	
+	}
+	
+	void showOutputQueue()
+	{
+		printf("the outputQueue Now are:\n");
+		for(int i = 0; i != current; i++)
+		{
+			printf("Q: %d\n",ary[i]);
+		}
+			
 	}
 	
 };
@@ -759,6 +795,7 @@ void execute_child_process(int* args)
 	show_material_total();
 	outputQueue.showStatus();
 	show_deadlock();
+	outputQueue.showOutputQueue();
 	exit(0);
 	
 }
