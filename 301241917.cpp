@@ -86,23 +86,31 @@ private:
 	int m3_counter;
 public:
 	InputBuffer(int s):size(s),current(0),m1_counter(0),m2_counter(0),m3_counter(0)
+	{
+		ary = new int[size];
+		for(int i = 0; i != size; i++)
 		{
-			ary = new int[size];
-			for(int i = 0; i != size; i++)
-			{
-				ary[i] = -1;   // means no material at that index
-			}
+			ary[i] = -1;   // means no material at that index
 		}
+	}
 		
 	~InputBuffer(){delete ary;}
 	
-	void check_clear()
+	bool check(Material item) // when there is only one empty slot remains, with the latest insert one, there must be three kind of material in input buffer, otherwise we won't push it in the ary.
 	{
-		if(current < size)
-			return;
+		if(current < size - 1)
+			return false;
 		else
 		{
 			int detect[3] = {0,0,0}; // to detect whether there is material_1 or 2 or 3 in the ary
+			
+			if(item == MATERIAL_1)
+				detect[0] = 1;
+			else if (item == MATERIAL_2)
+				detect[1] = 1;
+			else if (item == MATERIAL_3)
+				detect[2] = 1;
+			
 			for(int i = 0; i != size; i++)
 			{
 				if(ary[i] == MATERIAL_1)
@@ -110,21 +118,27 @@ public:
 				else if (ary[i] == MATERIAL_2)
 					detect[1] = 1;
 				else if (ary[i] == MATERIAL_3)
-					detect[3] = 1;
+					detect[2] = 1;
 			}
 			// if the ary is full and there is only 2 or 1 kind of material, deadlock may occur,  so discard all the material 
 			if((detect[0] + detect[1] + detect[2]) < 3) 
 			{
-				for(int i = 0; i != size; i++)
-					ary[i] = -1;
+				printf("\n\n\n********error occurs in check\n\n\n");
 				g_inputBufferDeadlockCounter++;
+				return true;
+				
+				
 			}
+			else
+			return false;
 		}
 	}
 	
 	int push(Material item)
 	{
-		check_clear();
+		if(check(item))
+			return -2;
+		
 		if(current < size)
 		{
 			if(item == MATERIAL_1)
@@ -235,8 +249,10 @@ public:
 	// 	}
 	// }
 	
-	bool try_get_materials(Product pd, Material* tempHold)
+ 	int try_get_materials(Product pd, Material* tempHold)
 	{
+		//check_clear();
+		
 		if(pd == PRODUCT_1)
 		{
 			int index1 = -1;
@@ -318,34 +334,34 @@ public:
 	}
 	
 	// Material pop()  // won't use in the future
-// 	{
-// 		Material item = -1; 
-// 		if(current > 0) 
-// 		{
-// 			for(int i =0; i != size; i++)
-// 			{
-// 				if(ary[i] != -1)
-// 				{
-// 					item = ary[i];
-// 					ary[i] = -1;
-// 					--current;
-// 					break;
-// 				}
-// 			}
-// 			if(item == MATERIAL_1)
-// 				m1_counter--;
-// 			else if(item == MATERIAL_2)
-// 				m2_counter--;
-// 			else if(item == MATERIAL_3)
-// 				m3_counter--;
-// 			return item;
-// 		}
-// 		else 
-// 		{ /* Error buffer empty */
-// 			return -1;
-// 		}
-// 		
-// 	}	
+	// 	{
+	// 		Material item = -1; 
+	// 		if(current > 0) 
+	// 		{
+	// 			for(int i =0; i != size; i++)
+	// 			{
+	// 				if(ary[i] != -1)
+	// 				{
+	// 					item = ary[i];
+	// 					ary[i] = -1;
+	// 					--current;
+	// 					break;
+	// 				}
+	// 			}
+	// 			if(item == MATERIAL_1)
+	// 				m1_counter--;
+	// 			else if(item == MATERIAL_2)
+	// 				m2_counter--;
+	// 			else if(item == MATERIAL_3)
+	// 				m3_counter--;
+	// 			return item;
+	// 		}
+	// 		else 
+	// 		{ /* Error buffer empty */
+	// 			return -1;
+	// 		}
+	// 		
+	// 	}	
 	void showState()
 	{
 		printf("The state of InputBuffer Now is:\n");
@@ -378,6 +394,11 @@ private:
 public:
 	OutputQueue():current(0),p1_counter(0),p2_counter(0),p3_counter(0){ary = new int[1000000];}
 	~OutputQueue(){delete ary;}
+	
+	int size()
+	{
+		return current;
+	}
 	
 	void check_priority_next(Product* priority) // to check produce which product next is best
 	{
@@ -520,7 +541,7 @@ public:
 	void showOutputQueue()
 	{
 		printf("the outputQueue Now are:\n");
-		for(int i = 0; i != current; i++)
+			for(int i = 0; i != current; i++)
 		{
 			printf("Q: %d\n",ary[i]);
 		}
@@ -578,26 +599,31 @@ void *generator(void *param)
 		//printf("Now in generator%d, sleep for a while\n",generatorID);
 		int rNum = (rand() / RAND_DIVISOR)%100;
 		sleep(rNum);
-		//printf("generator%d finish sleep.\n",generatorID);
+		printf("generator%d try to down the semaphore\n",generatorID);
 		/* acquire the empty lock */
 		sem_wait(&empty);
-		//printf("generator%d finish to down the semaphore.\n", generatorID);
+		printf("generator%d finish to down the semaphore.\n", generatorID);
 		/* acquire the inputBuffer_mutex lock */
 		pthread_mutex_lock(&inputBuffer_mutex);
 		//printf("generator%d enter the critical section.\n", generatorID);
-
-		if(inputBuffer.push(materialID) == -1) {
+		int temp = inputBuffer.push(materialID); 
+		if(temp == -1) {
 			printf("************* error:generator%d report error condition\n", generatorID);
+		}
+		else if (temp == -2)
+		{
+			sem_post(&empty);
 		}
 		else {
 			printf("generator%d produced MATERIAL_%d\n", generatorID, materialID);
+			sem_post(&full);
 		}
 		inputBuffer.showAry();
 		/* release the inputBuffer_mutex lock */
 		pthread_mutex_unlock(&inputBuffer_mutex);
 		//printf("generator%d exits the critical section, and try to up the semaphore\n",generatorID);
 		/* signal full */
-		sem_post(&full);
+		//sem_post(&full);
 		//printf("generator%d finish up the semaphore\n",generatorID);
 		
 	}
@@ -627,35 +653,78 @@ void *operators(void *param) {
 		printf("operators%d finish getting all the materials semaphores \n",operatorsID);
 		/* aquire the inputBuffer_mutex lock */
 		pthread_mutex_lock(&inputBuffer_mutex);
-		//printf("operators%d enter the critical section\n",operatorsID);
-		Product priority[2]; //ask the outputQueue which product to operate first
-		outputQueue.check_priority_next(priority);
-		if(inputBuffer.try_get_materials(priority[0],temp_materials)) //$$$$$$$$$$$$ maybe don't need temp_materials
+		if(outputQueue.size() == 0) // if there is no product in ouputque now, produce whatever we can produce
 		{
-			pthread_mutex_lock(&outputQueue_mutex);
-			outputQueue.try_insert_product(priority[0]);
-			printf("^^^^^^^ operator %d MAY produce the product%d\n",operatorsID,priority[0]);
-			pthread_mutex_unlock(&outputQueue_mutex);
-			sem_post(&empty);
-			sem_post(&empty);
-			//sem_post(&tools);
+			if(inputBuffer.try_get_materials(PRODUCT_1,temp_materials)) //$$$$$$$$$$$$ maybe don't need temp_materials
+			{
+				pthread_mutex_lock(&outputQueue_mutex);
+				outputQueue.try_insert_product(PRODUCT_1);
+				printf("^^^^^^^ operator %d MAY produce the product%d\n",operatorsID,PRODUCT_1);
+				pthread_mutex_unlock(&outputQueue_mutex);
+				sem_post(&empty);
+				sem_post(&empty);
+				//sem_post(&tools);
+			}
+			else if(inputBuffer.try_get_materials(PRODUCT_2,temp_materials))
+			{
+				pthread_mutex_lock(&outputQueue_mutex);
+				outputQueue.try_insert_product(PRODUCT_2);
+				printf("^^^^^^^ operator %d MAY produce the product%d\n",operatorsID,PRODUCT_2);
+				pthread_mutex_unlock(&outputQueue_mutex);
+				sem_post(&empty);
+				sem_post(&empty);
+				//sem_post(&tools);
+			}
+			else if(inputBuffer.try_get_materials(PRODUCT_3,temp_materials))
+			{
+				pthread_mutex_lock(&outputQueue_mutex);
+				outputQueue.try_insert_product(PRODUCT_3);
+				printf("^^^^^^^ operator %d MAY produce the product%d\n",operatorsID,PRODUCT_3);
+				pthread_mutex_unlock(&outputQueue_mutex);
+				sem_post(&empty);
+				sem_post(&empty);
+			}
+			
+			else
+			{
+				sem_post(&full);
+				sem_post(&full);
+				printf("^^^^^^^ operator_%d put the materials back to the inputBuffer\n\n",operatorsID);
+				//sem_post(&tools)
+			}
 		}
-		else if(inputBuffer.try_get_materials(priority[1],temp_materials))
-		{
-			pthread_mutex_lock(&outputQueue_mutex);
-			outputQueue.try_insert_product(priority[1]);
-			printf("^^^^^^^ operator %d MAY produce the product%d\n",operatorsID,priority[1]);
-			pthread_mutex_unlock(&outputQueue_mutex);
-			sem_post(&empty);
-			sem_post(&empty);
-			//sem_post(&tools);
-		}
-		else
-		{
-			sem_post(&full);
-			sem_post(&full);
-			printf("^^^^^^^ operator_%d put the materials back to the inputBuffer\n\n",operatorsID);
-			//sem_post(&tools)
+		
+		else{
+			//printf("operators%d enter the critical section\n",operatorsID);
+			Product priority[2]; //ask the outputQueue which product to operate first
+			outputQueue.check_priority_next(priority);
+			if(inputBuffer.try_get_materials(priority[0],temp_materials)) //$$$$$$$$$$$$ maybe don't need temp_materials
+			{
+				pthread_mutex_lock(&outputQueue_mutex);
+				outputQueue.try_insert_product(priority[0]);
+				printf("^^^^^^^ operator %d MAY produce the product%d\n",operatorsID,priority[0]);
+				pthread_mutex_unlock(&outputQueue_mutex);
+				sem_post(&empty);
+				sem_post(&empty);
+				//sem_post(&tools);
+			}
+			else if(inputBuffer.try_get_materials(priority[1],temp_materials))
+			{
+				pthread_mutex_lock(&outputQueue_mutex);
+				outputQueue.try_insert_product(priority[1]);
+				printf("^^^^^^^ operator %d MAY produce the product%d\n",operatorsID,priority[1]);
+				pthread_mutex_unlock(&outputQueue_mutex);
+				sem_post(&empty);
+				sem_post(&empty);
+				//sem_post(&tools);
+			}
+			else
+			{
+				sem_post(&full);
+				sem_post(&full);
+				printf("^^^^^^^ operator_%d put the materials back to the inputBuffer\n\n",operatorsID);
+				//sem_post(&tools)
+			}
 		}
 		inputBuffer.showAry();
 		pthread_mutex_unlock(&inputBuffer_mutex);
@@ -701,55 +770,55 @@ int main(int argc, char *argv[])
 	
 	//while(TRUE)
 	//{
-		child_pid = fork();
-		if(child_pid == 0) // child process
-		{
+	child_pid = fork();
+	if(child_pid == 0) // child process
+	{
 			
-			//********* maybe only need to execute once, depend on how fork works and when the child process release
-			execute_child_process(args);
-		}
-		else // parent process
+		//********* maybe only need to execute once, depend on how fork works and when the child process release
+		execute_child_process(args);
+	}
+	else // parent process
+	{
+		//changemode(1);
+		do
 		{
-			//changemode(1);
-			do
-			{
-				//printf("############## pid is %d $$$$$$$$$$\n \n \n \n\n\n\n\n\n\n\n\n\n\n\n\n", getpid());
-				// int ch;
-				// 
-				// while(TRUE) // ****** just for test need a sleep or counter in fact
-				// {
-				// 	printf(".");
-				// 	if(kbhit())
-				// 	{
-				// 		ch = getchar();
-				// 		if(ch == 'p')
-				// 		{
-				// 			printf("p is clicked\n");
-				// 			paused = !paused;
-				// 		}
-				// 		else if(ch == 'k')
-				// 		{
-				// 			printf("k is clicked\n");
-				// 			inputBuffer.showState();
-				// 		}
-				// 		break;
-				// 	}
-				// 	
-				// }
-				// changemode(0);
+			//printf("############## pid is %d $$$$$$$$$$\n \n \n \n\n\n\n\n\n\n\n\n\n\n\n\n", getpid());
+			// int ch;
+			// 
+			// while(TRUE) // ****** just for test need a sleep or counter in fact
+			// {
+			// 	printf(".");
+			// 	if(kbhit())
+			// 	{
+			// 		ch = getchar();
+			// 		if(ch == 'p')
+			// 		{
+			// 			printf("p is clicked\n");
+			// 			paused = !paused;
+			// 		}
+			// 		else if(ch == 'k')
+			// 		{
+			// 			printf("k is clicked\n");
+			// 			inputBuffer.showState();
+			// 		}
+			// 		break;
+			// 	}
+			// 	
+			// }
+			// changemode(0);
 				
-				if (!paused) {
-					kill(child_pid, SIGCONT);
-				} else {
-					kill(child_pid, SIGSTOP);
-				}
+			if (!paused) {
+				kill(child_pid, SIGCONT);
+			} else {
+				kill(child_pid, SIGSTOP);
+			}
 				
 				
 					
-				sleep(1);
-			} while (0 == waitpid(child_pid, &child_status, 0));  // maybe don't need this line
-		}
-		//}
+			sleep(1);
+		} while (0 == waitpid(child_pid, &child_status, 0));  // maybe don't need this line
+	}
+	//}
 	
 
 	
