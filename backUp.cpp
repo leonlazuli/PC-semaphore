@@ -42,7 +42,7 @@ typedef int Product;
 #define PRODUCT_2 2  // produced from MATERIAL_1 and MATERIAL_3
 #define PRODUCT_3 3 // produced form MATERIAL_2 and MATERIAL_3
 
-bool g_pause = FALSE;
+bool paused = FALSE;
 
 int g_material_1_count = 0;
 int g_material_2_count = 0;
@@ -61,12 +61,8 @@ pthread_mutex_t outputQueue_mutex;
 
 
 pthread_t tid;       //Thread ID
-pthread_t child_tid;
-pthread_t generator_tid[3];
-pthread_t operator_tid[100];
-int operator_counter;
 pthread_attr_t attr; //Set of thread attributes
-int testCounter = 0;
+
 
 
 void show_material_total()
@@ -137,7 +133,7 @@ public:
 				
 			}
 			else
-				return false;
+			return false;
 		}
 	}
 	
@@ -256,7 +252,7 @@ public:
 	// 	}
 	// }
 	
-	int try_get_materials(Product pd, Material* tempHold)
+ 	int try_get_materials(Product pd, Material* tempHold)
 	{
 		//check_clear();
 		
@@ -548,7 +544,7 @@ public:
 	void showOutputQueue()
 	{
 		printf("the outputQueue Now are:\n");
-		for(int i = 0; i != current; i++)
+			for(int i = 0; i != current; i++)
 		{
 			printf("Q: %d\n",ary[i]);
 		}
@@ -570,16 +566,6 @@ void *generator(void *param); /* the generator thread */
 void *operators(void *param); /* the operators thread */
 int insert_item(Material item);
 int remove_item(Material *item);
-
-void cancel_all_child_thread()
-{
-	pthread_cancel(child_tid);
-	for(int i = 0; i != 3; i++)
-		pthread_cancel(generator_tid[i]);
-	for(int i = 0; i != operator_counter; i++)
-		pthread_cancel(operator_tid[i]);
-}
-
 
 void initializeData(int nTools) 
 {
@@ -617,18 +603,6 @@ void *generator(void *param)
 		//int rNum = (rand() / RAND_DIVISOR)%100;
 		sleep(1);
 		printf("generator%d try to down the semaphore\n",generatorID);
-		
-		// printf("\n the testCouter now is %d \n", testCounter++);
-		// if(testCounter++ > 20)
-		// {
-		// 	printf("\n\n\n  generator try to exit\n\n\n");
-		// 	g_pause = true;
-		// 	//kill(getpid(),SIGSTOP);
-		// 	//pthread_exit(0);
-		// 	//pthread_cancel(child_tid);
-		// 	//cancel_all_child_thread();
-		// }
-		
 		/* acquire the empty lock */
 		sem_wait(&empty);
 		printf("generator%d finish to down the semaphore.\n", generatorID);
@@ -776,54 +750,11 @@ void changemode(int);
 int  kbhit(void);
 
 
-void *execute_child_process(void* argv)
-{
-	int* args = (int*)argv;
-	int mainSleepTime = args[0];/* Time in seconds for main to sleep */
-	int numGeneator = 3; /* Number of generator threads  is a const 3 */
-	//int numTools = args[1]; // Number of tools
-	int numOperator = args[2]; /* Number of operators threads */
-	testCounter = 0;
-	printf("----------------- now in main, before create the generator\n\n\n");
-	//printf("$$$$$$$ pid is %d $$$$$$$$$$\n", getpid());///////////////
-	/* Create the generator threads */
-	int proCounter = 0;
-	for(int i = 0; i < numGeneator; i++) {
-		/* Create the thread */
-		
-		pthread_create(&generator_tid[i],&attr,generator,&proCounter);
-		proCounter++;
-		
-	}
-	//printf("----------------- now in main, finish create the generator, before create the operators\n");
-	/* Create the operators threads */
-	int conCounter = 0;
-	for(int i = 0; i < numOperator; i++) {
-		/* Create the thread */
-		
-		pthread_create(&operator_tid[i],&attr,operators,&conCounter);
-		conCounter++;
-		
-	}
-
-	/* Sleep for the specified amount of time in milliseconds */
-	//printf("---------------- now in main , finish create operators and before main sleep\n");
-	sleep(mainSleepTime);
-
-	/* Exit the program */
-	//printf("Exit the program\n");
-
-	//exit(0);
-	return NULL;
-	
-}
-
-
 int main(int argc, char *argv[])
 {
 
-	//pid_t child_pid; /* variable to store the child's pid */
-//	int child_status; /* parent process: child's exit status */
+	pid_t child_pid; /* variable to store the child's pid */
+	int child_status; /* parent process: child's exit status */
 	 
 	/* Verify the correct number of arguments were passed in */
 	if(argc != 4) 
@@ -836,49 +767,110 @@ int main(int argc, char *argv[])
 	//int numGeneator = 3; /* Number of generator threads const 3*/  
 	int numTools = atoi(argv[2]); // number of tools
 	int numOperator = atoi(argv[3]); /* Number of operators threads */
-	operator_counter = numOperator;
 	int args[3] = {mainSleepTime, numTools, numOperator};
 	/* Initialize the app */
 	initializeData(numTools);
 	
-	while(TRUE)
+	//while(TRUE)
+	//{
+	child_pid = fork();
+	if(child_pid == 0) // child process
 	{
-		
-		pthread_create(&child_tid,&attr,execute_child_process,args); ////////
-		changemode(1);
-		while(1)
+			
+		//********* maybe only need to execute once, depend on how fork works and when the child process release
+		execute_child_process(args);
+	}
+	else // parent process
+	{
+		//changemode(1);
+		do
 		{
-			//printf(".");
-			int ch;
-			if(kbhit())
-			{
-				ch = getchar();
-				if(ch == 'p')
-				{
-					printf("p is clicked\n");
-					//pthread_cancel(child_tid);
-					cancel_all_child_thread();
-				}
-				else if(ch == 'k')
-					printf("k is clicked\n");
-				break;
+			//printf("############## pid is %d $$$$$$$$$$\n \n \n \n\n\n\n\n\n\n\n\n\n\n\n\n", getpid());
+			// int ch;
+			// 
+			// while(TRUE) // ****** just for test need a sleep or counter in fact
+			// {
+			// 	printf(".");
+			// 	if(kbhit())
+			// 	{
+			// 		ch = getchar();
+			// 		if(ch == 'p')
+			// 		{
+			// 			printf("p is clicked\n");
+			// 			paused = !paused;
+			// 		}
+			// 		else if(ch == 'k')
+			// 		{
+			// 			printf("k is clicked\n");
+			// 			inputBuffer.showState();
+			// 		}
+			// 		break;
+			// 	}
+			// 	
+			// }
+			// changemode(0);
+				
+			if (!paused) {
+				kill(child_pid, SIGCONT);
+			} else {
+				kill(child_pid, SIGSTOP);
 			}
-		}
-		changemode(0);
-		printf("\n\n\n come back to main \n\n\n");
-		show_material_total();
-		outputQueue.showStatus();
-		show_deadlock();
-		outputQueue.showOutputQueue();
-		sleep(2); //////////
+				
+				
+					
+			sleep(1);
+		} while (0 == waitpid(child_pid, &child_status, 0));  // maybe don't need this line
+	}
+	//}
+	
 
 	
 	
 	
 	
-	}
 }
 
+void execute_child_process(int* args)
+{
+	int mainSleepTime = args[0];/* Time in seconds for main to sleep */
+	int numGeneator = 3; /* Number of generator threads  is a const 3 */
+	//int numTools = args[1]; // Number of tools
+	int numOperator = args[2]; /* Number of operators threads */
+	printf("----------------- now in main, before create the generator\n\n\n");
+	//printf("$$$$$$$ pid is %d $$$$$$$$$$\n", getpid());///////////////
+	/* Create the generator threads */
+	static int proCounter = 0;
+	for(int i = 0; i < numGeneator; i++) {
+		/* Create the thread */
+		
+		pthread_create(&tid,&attr,generator,&proCounter);
+		proCounter++;
+		
+	}
+	//printf("----------------- now in main, finish create the generator, before create the operators\n");
+	/* Create the operators threads */
+	static int conCounter = 0;
+	for(int i = 0; i < numOperator; i++) {
+		/* Create the thread */
+		
+		pthread_create(&tid,&attr,operators,&conCounter);
+		conCounter++;
+		
+	}
+
+	/* Sleep for the specified amount of time in milliseconds */
+	//printf("---------------- now in main , finish create operators and before main sleep\n");
+	sleep(mainSleepTime);
+
+	/* Exit the program */
+	//printf("Exit the program\n");
+	show_material_total();
+	outputQueue.showStatus();
+	show_deadlock();
+	outputQueue.showOutputQueue();
+	exit(0);
+	
+}
 
 void changemode(int dir)
 {
