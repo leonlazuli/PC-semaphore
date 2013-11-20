@@ -134,7 +134,7 @@ public:
 			// if the ary is full and there is only 2 or 1 kind of material, deadlock may occur,  so discard all the material 
 			if((detect[0] + detect[1] + detect[2]) < 3) 
 			{
-				printf("\n\n\n********error occurs in check\n\n\n");
+				printf("\n\n\nDead lock occurs, please PRESS any button to pause, and procedure will be taken to remove it. \n\n\n");
 				g_inputBufferDeadlockCounter++;
 				return true;
 				
@@ -373,6 +373,15 @@ public:
 	// 		}
 	// 		
 	// 	}	
+	void clearBuffer()
+	{
+		m1_counter = m2_counter = m3_counter = current = 0;
+		for(int i = 0; i != size; i++)
+		{
+			ary[i] = -1;
+		}
+		
+	}
 	void showState()
 	{
 		printf("The state of InputBuffer Now is:\n");
@@ -636,7 +645,7 @@ void *generator(void *param)
 	while(TRUE) {
 		//printf("$$$$$$$ pid is %d $$$$$$$$$$\n", getpid()); //////////////////
 		/* sleep for a random period of time */
-		//printf("Now in generator%d, sleep for a while\n",generatorID);
+		printf("Now in generator%d, sleep for a while\n",generatorID);
 		//int rNum = (rand() / RAND_DIVISOR)%100;
 		sleep(1);
 		printf("generator%d try to down the semaphore\n",generatorID);
@@ -846,19 +855,18 @@ int main(int argc, char *argv[])
 {
 
 	//pid_t child_pid; /* variable to store the child's pid */
-//	int child_status; /* parent process: child's exit status */
+	//	int child_status; /* parent process: child's exit status */
 	 
 	/* Verify the correct number of arguments were passed in */
-	if(argc != 4) 
+	if(argc != 3) 
 	{
-		fprintf(stderr, "USAGE:./main.out <INT> <INT> <INT>\n");
+		fprintf(stderr, "\n error: not enough parameters.\nPlease enter in this form: ./301241917_LiuLiang_HW2.exe number_of_tools number_of_operators \n");
 	}
 	
-
-	int mainSleepTime = atoi(argv[1]); /* Time in seconds for main to sleep */
+	int mainSleepTime = 5; /* Time in seconds for main to sleep */
 	//int numGeneator = 3; /* Number of generator threads const 3*/  
-	int numTools = atoi(argv[2]); // number of tools
-	int numOperator = atoi(argv[3]); /* Number of operators threads */
+	int numTools = atoi(argv[1]); // number of tools
+	int numOperator = atoi(argv[2]); /* Number of operators threads */
 	operator_counter = numOperator;
 	int args[3] = {mainSleepTime, numTools, numOperator};
 	/* Initialize the app */
@@ -877,24 +885,37 @@ int main(int argc, char *argv[])
 			{
 				ch = getchar();
 				if(ch == 'p')
-				{
-					printf("p is clicked\n");
-					//pthread_cancel(child_tid);
-					cancel_all_child_thread();
-				}
-				else if(ch == 'k')
-					printf("k is clicked\n");
+					;
+				cancel_all_child_thread();
 				break;
 			}
 		}
 		changemode(0);
 		printf("\n\n\n come back to main \n\n\n");
 		show_material_total();
+		inputBuffer.showState();
 		outputQueue.showStatus();
 		show_deadlock();
 		outputQueue.showOutputQueue();
+		inputBuffer.clearBuffer();
 		clean_data(); // reset the semaphores 
-		sleep(2); //////////
+		
+		printf("\n Process is paused now, press any key to resume process.\n");
+		changemode(1);
+		while(1)
+		{
+			//printf(".");
+			
+			if(kbhit())
+			{  
+				int ch;
+				ch = getchar();
+				if(ch == 'p')
+					;
+				break;
+			}
+		}
+		changemode(0);
 
 	
 	
